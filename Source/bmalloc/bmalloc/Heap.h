@@ -118,10 +118,10 @@ private:
     LargeRange tryAllocateLargeChunk(size_t alignment, size_t);
     LargeRange splitAndAllocate(UniqueLockHolder&, LargeRange&, size_t alignment, size_t);
 
-    inline void adjustFootprint(UniqueLockHolder&, ssize_t, const char* note);
-    inline void adjustFreeableMemory(UniqueLockHolder&, ssize_t, const char* note);
-    inline void adjustStat(size_t& value, ssize_t);
-    inline void logStat(size_t value, ssize_t amount, const char* label, const char* note);
+    inline void adjustFootprint(UniqueLockHolder&, ptrdiff_t, const char* note);
+    inline void adjustFreeableMemory(UniqueLockHolder&, ptrdiff_t, const char* note);
+    inline void adjustStat(size_t& value, ptrdiff_t);
+    inline void logStat(size_t value, ptrdiff_t amount, const char* label, const char* note);
 
     HeapKind m_kind;
     HeapConstants& m_constants;

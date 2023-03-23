@@ -26,6 +26,7 @@
 #pragma once
 
 #include "BAssert.h"
+#include "BInline.h"
 #include <algorithm>
 #include <climits>
 #include <cstdint>
@@ -162,10 +163,28 @@ template<> __forceinline constexpr unsigned long clzl<1>(unsigned long value)
     return 0;
 }
 
-__forceinline constexpr unsigned long __builtin_clzl(unsigned long value)
+BINLINE constexpr unsigned long __builtin_clzl(unsigned long value)
 {
     return value == 0 ? 32 : clzl<bitCount<unsigned long>()>(value);
 }
+
+BINLINE unsigned __builtin_ffs(unsigned long value)
+{
+    /* _BitScanForward
+       <https://docs.microsoft.com/en-us/cpp/intrinsics/bitscanforward-bitscanforward64> */
+    unsigned long bit;
+    if (_BitScanForward64(&bit, value))
+        return bit + 1;
+    else
+        return 0;
+}
+
+BINLINE bool __builtin_usub_overflow(unsigned a, unsigned b, unsigned* res)
+{
+    *res = a - b;
+    return *res > a;
+}
+
 #endif
 
 template <typename T>

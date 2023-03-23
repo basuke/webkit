@@ -32,8 +32,13 @@
 #include "Range.h"
 #include "Sizes.h"
 #include <algorithm>
+
+#if BPLATFORM(WIN)
+#include <Windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #if BOS(DARWIN)
 #include <mach/vm_page_size.h>
@@ -55,7 +60,13 @@ inline size_t vmPageSize()
 {
     static size_t cached;
     if (!cached) {
+#if BPLATFORM(WIN)
+        SYSTEM_INFO system_info;
+        GetSystemInfo(&system_info);
+        long pageSize = system_info.dwPageSize;
+#else
         long pageSize = sysconf(_SC_PAGESIZE);
+#endif
         if (pageSize < 0)
             BCRASH();
         cached = pageSize;
@@ -97,10 +108,7 @@ inline size_t vmPageSizePhysical()
 #if BOS(DARWIN) && (BCPU(ARM64) || BCPU(ARM))
     return vm_kernel_page_size;
 #else
-    static size_t cached;
-    if (!cached)
-        cached = sysconf(_SC_PAGESIZE);
-    return cached;
+    return vmPageSize();
 #endif
 }
 
@@ -123,9 +131,14 @@ inline void vmValidatePhysical(void* p, size_t vmSize)
 inline void* tryVMAllocate(size_t vmSize, VMTag usage = VMTag::Malloc)
 {
     vmValidate(vmSize);
+#if BPLATFORM(WIN)
+    // @TODO
+    void* result = nullptr;
+#else
     void* result = mmap(0, vmSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | BMALLOC_NORESERVE, static_cast<int>(usage), 0);
     if (result == MAP_FAILED)
         return nullptr;
+#endif
     return result;
 }
 
@@ -139,13 +152,21 @@ inline void* vmAllocate(size_t vmSize, VMTag usage = VMTag::Malloc)
 inline void vmDeallocate(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
+#if BPLATFORM(WIN)
+    // @TODO
+#else
     munmap(p, vmSize);
+#endif
 }
 
 inline void vmRevokePermissions(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
+#if BPLATFORM(WIN)
+    // @TODO
+#else
     mprotect(p, vmSize, PROT_NONE);
+#endif
 }
 
 inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
@@ -153,7 +174,12 @@ inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
     vmValidate(p, vmSize);
     // MAP_ANON guarantees the memory is zeroed. This will also cause
     // page faults on accesses to this range following this call.
+#if BPLATFORM(WIN)
+    // @TODO
+    void* result = nullptr;
+#else
     void* result = mmap(p, vmSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED | BMALLOC_NORESERVE, static_cast<int>(usage), 0);
+#endif
     RELEASE_BASSERT(result == p);
 }
 
@@ -202,6 +228,8 @@ inline void vmDeallocatePhysicalPages(void* p, size_t vmSize)
     SYSCALL(madvise(p, vmSize, MADV_FREE_REUSABLE));
 #elif BOS(FREEBSD)
     SYSCALL(madvise(p, vmSize, MADV_FREE));
+#elif BPLATFORM(WIN)
+    // @TODO
 #else
     SYSCALL(madvise(p, vmSize, MADV_DONTNEED));
 #if BOS(LINUX)
@@ -219,6 +247,8 @@ inline void vmAllocatePhysicalPages(void* p, size_t vmSize)
     // For the Darwin platform, we don't need to call madvise(..., MADV_FREE_REUSE)
     // to commit physical memory to back a range of allocated virtual memory.
     // Instead the kernel will commit pages as they are touched.
+#elif BPLATFORM(WIN)
+    // @TODO
 #else
     SYSCALL(madvise(p, vmSize, MADV_NORMAL));
 #if BOS(LINUX)

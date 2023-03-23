@@ -34,7 +34,8 @@
 #endif
 
 #if OS(WINDOWS)
-#include <windows.h>
+#include <Windows.h>
+#include <psapi.h>
 #else
 #if HAVE(RESOURCE_H)
 #include <sys/resource.h>

@@ -102,6 +102,8 @@ private:
 
 #if HAVE_PTHREAD_MACHDEP_H
     static constexpr pthread_key_t tlsKey = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY1;
+#elif BPLATFORM(WIN)
+    
 #else
     BEXPORT static bool s_didInitialize;
     BEXPORT static pthread_key_t s_tlsKey;

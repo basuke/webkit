@@ -35,6 +35,10 @@ MallocFallbackState mallocFallbackState;
 
 namespace {
 
+#if BPLATFORM(WIN) 
+#define strcasecmp _stricmp
+#endif
+
 void determineMallocFallbackState()
 {
     static std::once_flag onceFlag;

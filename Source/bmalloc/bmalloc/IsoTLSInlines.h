@@ -151,6 +151,9 @@ inline IsoTLS* IsoTLS::get()
 {
 #if HAVE_PTHREAD_MACHDEP_H
     return static_cast<IsoTLS*>(_pthread_getspecific_direct(tlsKey));
+#elif BPLATFORM(WIN)
+    // @TODO
+    return nullptr;
 #else
     if (!s_didInitialize)
         return nullptr;
@@ -162,6 +165,8 @@ inline void IsoTLS::set(IsoTLS* tls)
 {
 #if HAVE_PTHREAD_MACHDEP_H
     _pthread_setspecific_direct(tlsKey, tls);
+#elif BPLATFORM(WIN)
+    // @TODO
 #else
     pthread_setspecific(s_tlsKey, tls);
 #endif

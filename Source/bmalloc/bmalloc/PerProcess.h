@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "BCompiler.h"
 #include "BInline.h"
 #include "Mutex.h"
 #include "Sizes.h"

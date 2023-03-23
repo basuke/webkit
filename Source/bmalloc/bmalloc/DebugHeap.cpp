@@ -122,9 +122,14 @@ void* DebugHeap::malloc(size_t size, FailureAction action)
 
 void* DebugHeap::memalign(size_t alignment, size_t size, FailureAction action)
 {
+#if BPLATFORM(WIN)
+    void* result = _aligned_malloc(size, alignment);
+    RELEASE_BASSERT(action == FailureAction::ReturnNull || result);
+#else
     void* result = nullptr;
     if (posix_memalign(&result, alignment, size))
         RELEASE_BASSERT(action == FailureAction::ReturnNull || result);
+#endif
     return result;
 }
 

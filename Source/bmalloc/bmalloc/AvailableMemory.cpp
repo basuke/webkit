@@ -33,6 +33,7 @@
 #include "Scavenger.h"
 #include "Sizes.h"
 #include <array>
+#include <cstddef>
 #include <mutex>
 #if BOS(DARWIN)
 #if BPLATFORM(IOS_FAMILY)
@@ -121,7 +122,7 @@ struct LinuxMemory {
             return 0;
 
         std::array<char, 256> statmBuffer;
-        ssize_t numBytes = pread(statmFd, statmBuffer.data(), statmBuffer.size(), 0);
+        ptrdiff_t numBytes = pread(statmFd, statmBuffer.data(), statmBuffer.size(), 0);
         if (numBytes <= 0)
             return 0;
 

@@ -27,6 +27,7 @@
 
 #include "IsoSharedHeap.h"
 
+#include "Algorithm.h"
 #include "IsoSharedPage.h"
 #include "StdLibExtras.h"
 

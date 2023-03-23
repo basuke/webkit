@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "Algorithm.h"
 #include "IsoHeapImpl.h"
 #include "IsoTLSDeallocatorEntry.h"
 #include "IsoSharedHeapInlines.h"

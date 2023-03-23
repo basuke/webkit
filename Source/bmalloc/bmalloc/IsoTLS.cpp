@@ -36,7 +36,9 @@
 
 namespace bmalloc {
 
-#if !HAVE_PTHREAD_MACHDEP_H
+#if BPLATFORM(WIN)
+// @TODO
+#elif !HAVE_PTHREAD_MACHDEP_H
 bool IsoTLS::s_didInitialize;
 pthread_key_t IsoTLS::s_tlsKey;
 #endif
@@ -67,6 +69,8 @@ IsoTLS* IsoTLS::ensureEntries(unsigned offset)
             setvbuf(stderr, NULL, _IONBF, 0);
 #if HAVE_PTHREAD_MACHDEP_H
             pthread_key_init_np(tlsKey, destructor);
+#elif BPLATFORM(WIN)
+    // @TODO
 #else
             int error = pthread_key_create(&s_tlsKey, destructor);
             if (error)

@@ -37,15 +37,14 @@
 #include "VMAllocate.h"
 #include <mutex>
 
-#if !BOS(DARWIN)
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#endif
-
 #if BOS(DARWIN)
 #include <CommonCrypto/CommonCryptoError.h>
 #include <CommonCrypto/CommonRandom.h>
+#elif BPLATFORM(WIN)
+#else
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 namespace bmalloc {
@@ -111,6 +110,8 @@ void ARC4RandomNumberGenerator::stir()
 
 #if BOS(DARWIN)
     RELEASE_BASSERT(!CCRandomGenerateBytes(randomness, length));
+#elif BPLATFORM(WIN)
+    // @TODO
 #else
     static std::once_flag onceFlag;
     static int fd;
@@ -124,9 +125,9 @@ void ARC4RandomNumberGenerator::stir()
             RELEASE_BASSERT(ret >= 0);
             fd = ret;
         });
-    ssize_t amountRead = 0;
+    ptrdiff_t amountRead = 0;
     while (static_cast<size_t>(amountRead) < length) {
-        ssize_t currentRead = read(fd, randomness + amountRead, length - amountRead);
+        ptrdiff_t currentRead = read(fd, randomness + amountRead, length - amountRead);
         // We need to check for both EAGAIN and EINTR since on some systems /dev/urandom
         // is blocking and on others it is non-blocking.
         if (currentRead == -1)
