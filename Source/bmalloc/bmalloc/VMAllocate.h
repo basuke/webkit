@@ -56,14 +56,32 @@ namespace bmalloc {
 #define BMALLOC_NORESERVE 0
 #endif
 
+#if BPLATFORM(WIN)
+
+inline size_t vmGranularity()
+{
+    static size_t cached;
+    if (!cached) {
+        SYSTEM_INFO info;
+        GetSystemInfo(&info);
+        long granularity = info.dwAllocationGranularity;
+        if (granularity < 0)
+            BCRASH();
+        cached = granularity;
+    }
+    return cached;
+}
+
+#endif
+
 inline size_t vmPageSize()
 {
     static size_t cached;
     if (!cached) {
 #if BPLATFORM(WIN)
-        SYSTEM_INFO system_info;
-        GetSystemInfo(&system_info);
-        long pageSize = system_info.dwPageSize;
+        SYSTEM_INFO info;
+        GetSystemInfo(&info);
+        long pageSize = info.dwPageSize;
 #else
         long pageSize = sysconf(_SC_PAGESIZE);
 #endif
@@ -132,8 +150,7 @@ inline void* tryVMAllocate(size_t vmSize, VMTag usage = VMTag::Malloc)
 {
     vmValidate(vmSize);
 #if BPLATFORM(WIN)
-    // @TODO
-    void* result = nullptr;
+    void* result = VirtualAlloc(nullptr, vmSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
     void* result = mmap(0, vmSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | BMALLOC_NORESERVE, static_cast<int>(usage), 0);
     if (result == MAP_FAILED)
@@ -153,7 +170,8 @@ inline void vmDeallocate(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
 #if BPLATFORM(WIN)
-    // @TODO
+    auto success = VirtualFree(p, vmSize, MEM_DECOMMIT);
+    RELEASE_BASSERT(success);
 #else
     munmap(p, vmSize);
 #endif
@@ -163,7 +181,8 @@ inline void vmRevokePermissions(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
 #if BPLATFORM(WIN)
-    // @TODO
+    auto success = VirtualProtect(p, vmSize, PAGE_NOACCESS, NULL);
+    RELEASE_BASSERT(success);
 #else
     mprotect(p, vmSize, PROT_NONE);
 #endif
@@ -172,15 +191,17 @@ inline void vmRevokePermissions(void* p, size_t vmSize)
 inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
 {
     vmValidate(p, vmSize);
+#if BPLATFORM(WIN)
+    auto success = VirtualFree(p, vmSize, MEM_DECOMMIT);
+    RELEASE_BASSERT(success);
+    void* result = VirtualAlloc(p, vmSize, MEM_COMMIT, PAGE_READWRITE);
+    RELEASE_BASSERT(result);
+#else
     // MAP_ANON guarantees the memory is zeroed. This will also cause
     // page faults on accesses to this range following this call.
-#if BPLATFORM(WIN)
-    // @TODO
-    void* result = nullptr;
-#else
     void* result = mmap(p, vmSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED | BMALLOC_NORESERVE, static_cast<int>(usage), 0);
-#endif
     RELEASE_BASSERT(result == p);
+#endif
 }
 
 // Allocates vmSize bytes at a specified power-of-two alignment.
@@ -229,7 +250,8 @@ inline void vmDeallocatePhysicalPages(void* p, size_t vmSize)
 #elif BOS(FREEBSD)
     SYSCALL(madvise(p, vmSize, MADV_FREE));
 #elif BPLATFORM(WIN)
-    // @TODO
+    void* result = VirtualAlloc(p, vmSize, MEM_RESET, PAGE_NOACCESS);
+    RELEASE_BASSERT(result);
 #else
     SYSCALL(madvise(p, vmSize, MADV_DONTNEED));
 #if BOS(LINUX)
@@ -248,7 +270,8 @@ inline void vmAllocatePhysicalPages(void* p, size_t vmSize)
     // to commit physical memory to back a range of allocated virtual memory.
     // Instead the kernel will commit pages as they are touched.
 #elif BPLATFORM(WIN)
-    // @TODO
+    void* result = VirtualAlloc(p, vmSize, MEM_COMMIT, PAGE_READWRITE);
+    RELEASE_BASSERT(result);
 #else
     SYSCALL(madvise(p, vmSize, MADV_NORMAL));
 #if BOS(LINUX)
