@@ -161,13 +161,16 @@ void DebugHeap::dump()
 void* DebugHeap::memalignLarge(size_t alignment, size_t size)
 {
     alignment = roundUpToMultipleOf(m_pageSize, alignment);
-    size = roundUpToMultipleOf(m_pageSize, size);
-    void* result = tryVMAllocate(alignment, size);
-    if (!result)
+    size = roundUpToMultipleOf(m_pageSize, size) + alignment;
+
+    void* mapped = tryVMAllocate(size);
+    if (!mapped)
         return nullptr;
+    void* result = roundUpToMultipleOf(alignment, mapped);
+
     {
         LockHolder locker(mutex());
-        m_sizeMap[result] = size;
+        m_largeAlignedMap[result] = { mapped, size };
     }
     return result;
 }
@@ -177,15 +180,18 @@ void DebugHeap::freeLarge(void* base)
     if (!base)
         return;
     
+    void* mapped;
     size_t size;
     {
         LockHolder locker(mutex());
-        size = m_sizeMap[base];
-        size_t numErased = m_sizeMap.erase(base);
+        auto pair = m_largeAlignedMap[base];
+        mapped = pair.first;
+        size = pair.second;
+        size_t numErased = m_largeAlignedMap.erase(base);
         RELEASE_BASSERT(numErased == 1);
     }
     
-    vmDeallocate(base, size);
+    vmDeallocate(mapped, size);
 }
 
 DebugHeap* DebugHeap::tryGetSlow()

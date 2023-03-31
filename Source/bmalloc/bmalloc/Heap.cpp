@@ -577,6 +577,13 @@ void* Heap::allocateLarge(UniqueLockHolder& lock, size_t alignment, size_t size,
 
         ASSERT_OR_RETURN_ON_FAILURE(!usingGigacage());
 
+#if BPLATFORM(WIN)
+        constexpr size_t reservedSize = 1 * GB;
+        void* memory = vmAllocate(reservedSize);
+        vmDeallocatePhysicalPages(memory, reservedSize);
+        m_largeFree.add(LargeRange(memory, reservedSize, 0, 0, memory));
+        return allocateLarge(lock, alignment, size, action);
+#else
         range = tryAllocateLargeChunk(alignment, size);
         ASSERT_OR_RETURN_ON_FAILURE(range);
         
@@ -585,6 +592,7 @@ void* Heap::allocateLarge(UniqueLockHolder& lock, size_t alignment, size_t size,
         adjustFootprint(lock, range.totalPhysicalSize(), "allocateLarge");
 
         range = m_largeFree.remove(alignment, size);
+#endif
     }
     adjustFreeableMemory(lock, -range.totalPhysicalSize(), "allocateLarge.reuse");
 
@@ -609,7 +617,14 @@ LargeRange Heap::tryAllocateLargeChunk(size_t alignment, size_t size)
         return LargeRange();
     size = roundedSize;
 
-    void* memory = tryVMAllocate(alignment, size);
+    // Not use VMAllocate(alignment, size) but calculate them here.
+    // Remaining memory regions are not returned to kernel but added to FreeLarge.
+    size_t mappedSize = alignment + size;
+    if (mappedSize < alignment || mappedSize < size) // Check for overflow
+        return LargeRange();
+    size = mappedSize;
+
+    void* memory = tryVMAllocate(size);
     if (!memory)
         return LargeRange();
     

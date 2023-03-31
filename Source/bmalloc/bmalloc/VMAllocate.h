@@ -207,7 +207,7 @@ inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
 // Allocates vmSize bytes at a specified power-of-two alignment.
 // Use this function to create maskable memory regions.
 
-inline void* tryVMAllocate(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
+inline void* tryVMAllocateAligned(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
 {
     vmValidate(vmSize);
     vmValidate(vmAlignment);
@@ -235,9 +235,9 @@ inline void* tryVMAllocate(size_t vmAlignment, size_t vmSize, VMTag usage = VMTa
     return aligned;
 }
 
-inline void* vmAllocate(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
+inline void* vmAllocateAligned(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
 {
-    void* result = tryVMAllocate(vmAlignment, vmSize, usage);
+    void* result = tryVMAllocateAligned(vmAlignment, vmSize, usage);
     RELEASE_BASSERT(result);
     return result;
 }

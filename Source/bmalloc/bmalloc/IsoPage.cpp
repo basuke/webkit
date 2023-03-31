@@ -34,7 +34,7 @@ namespace bmalloc {
 
 void* IsoPageBase::allocatePageMemory()
 {
-    return tryVMAllocate(pageSize, pageSize, VMTag::IsoHeap);
+    return tryVMAllocateAligned(pageSize, pageSize, VMTag::IsoHeap);
 }
 
 } // namespace bmalloc
