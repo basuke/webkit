@@ -578,10 +578,11 @@ void* Heap::allocateLarge(UniqueLockHolder& lock, size_t alignment, size_t size,
         ASSERT_OR_RETURN_ON_FAILURE(!usingGigacage());
 
 #if BPLATFORM(WIN)
-        constexpr size_t reservedSize = 1 * GB;
-        void* memory = vmAllocate(reservedSize);
-        vmDeallocatePhysicalPages(memory, reservedSize);
-        m_largeFree.add(LargeRange(memory, reservedSize, 0, 0, memory));
+        constexpr size_t reserveAlignment = 1 * GB;
+        size_t reserveSize = roundUpToMultipleOf<reserveAlignment>(size);
+        void* memory = vmAllocate(reserveSize);
+        vmDeallocatePhysicalPages(memory, reserveSize);
+        m_largeFree.add(LargeRange(memory, reserveSize, 0, 0, memory));
         return allocateLarge(lock, alignment, size, action);
 #else
         range = tryAllocateLargeChunk(alignment, size);
