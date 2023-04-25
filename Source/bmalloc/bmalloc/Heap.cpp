@@ -578,7 +578,7 @@ void* Heap::allocateLarge(UniqueLockHolder& lock, size_t alignment, size_t size,
         ASSERT_OR_RETURN_ON_FAILURE(!usingGigacage());
 
 #if BPLATFORM(WIN)
-        constexpr size_t reserveAlignment = 1 * GB;
+        constexpr size_t reserveAlignment = 32 * MB;
         size_t reserveSize = roundUpToMultipleOf<reserveAlignment>(size);
         void* memory = vmAllocate(reserveSize);
         vmDeallocatePhysicalPages(memory, reserveSize);
