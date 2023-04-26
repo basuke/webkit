@@ -122,7 +122,7 @@ struct LinuxMemory {
             return 0;
 
         std::array<char, 256> statmBuffer;
-        ptrdiff_t numBytes = pread(statmFd, statmBuffer.data(), statmBuffer.size(), 0);
+        ssize_t numBytes = pread(statmFd, statmBuffer.data(), statmBuffer.size(), 0);
         if (numBytes <= 0)
             return 0;
 

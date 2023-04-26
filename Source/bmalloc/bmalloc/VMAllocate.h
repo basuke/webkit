@@ -34,7 +34,7 @@
 #include <algorithm>
 
 #if BPLATFORM(WIN)
-#include <Windows.h>
+#include <windows.h>
 #else
 #include <sys/mman.h>
 #include <unistd.h>
@@ -55,6 +55,16 @@ namespace bmalloc {
 #else
 #define BMALLOC_NORESERVE 0
 #endif
+
+struct VMAllocation {
+    void* address;
+    size_t size;
+};
+
+struct VMAlignedAllocation {
+    void* aligned;
+    VMAllocation allocation;
+};
 
 #if BPLATFORM(WIN)
 
@@ -204,44 +214,6 @@ inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
 #endif
 }
 
-// Allocates vmSize bytes at a specified power-of-two alignment.
-// Use this function to create maskable memory regions.
-
-inline void* tryVMAllocateAligned(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
-{
-    vmValidate(vmSize);
-    vmValidate(vmAlignment);
-
-    size_t mappedSize = vmAlignment + vmSize;
-    if (mappedSize < vmAlignment || mappedSize < vmSize) // Check for overflow
-        return nullptr;
-
-    char* mapped = static_cast<char*>(tryVMAllocate(mappedSize, usage));
-    if (!mapped)
-        return nullptr;
-    char* mappedEnd = mapped + mappedSize;
-
-    char* aligned = roundUpToMultipleOf(vmAlignment, mapped);
-    char* alignedEnd = aligned + vmSize;
-    
-    RELEASE_BASSERT(alignedEnd <= mappedEnd);
-    
-    if (size_t leftExtra = aligned - mapped)
-        vmDeallocate(mapped, leftExtra);
-    
-    if (size_t rightExtra = mappedEnd - alignedEnd)
-        vmDeallocate(alignedEnd, rightExtra);
-
-    return aligned;
-}
-
-inline void* vmAllocateAligned(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
-{
-    void* result = tryVMAllocateAligned(vmAlignment, vmSize, usage);
-    RELEASE_BASSERT(result);
-    return result;
-}
-
 inline void vmDeallocatePhysicalPages(void* p, size_t vmSize)
 {
     vmValidatePhysical(p, vmSize);
@@ -314,6 +286,48 @@ inline void vmAllocatePhysicalPagesSloppy(void* p, size_t size)
         return;
 
     vmAllocatePhysicalPages(begin, end - begin);
+}
+
+// Allocates vmSize bytes at a specified power-of-two alignment.
+// Use this function to create maskable memory regions.
+
+inline std::optional<VMAlignedAllocation> tryVMAllocateAligned(size_t vmAlignment, size_t vmSize, VMTag usage = VMTag::Malloc)
+{
+    vmValidate(vmSize);
+    vmValidate(vmAlignment);
+
+    size_t mappedSize = vmAlignment + vmSize;
+    if (mappedSize < vmAlignment || mappedSize < vmSize) // Check for overflow
+        return std::nullopt;
+
+    char* mapped = static_cast<char*>(tryVMAllocate(mappedSize, usage));
+    if (!mapped)
+        return std::nullopt;
+    char* mappedEnd = mapped + mappedSize;
+
+    char* aligned = roundUpToMultipleOf(vmAlignment, mapped);
+    char* alignedEnd = aligned + vmSize;
+
+    RELEASE_BASSERT(alignedEnd <= mappedEnd);
+
+    size_t leftExtra = aligned - mapped;
+    size_t rightExtra = mappedEnd - alignedEnd;
+
+#if BPLATFORM(WIN)
+    if (leftExtra)
+        vmDeallocatePhysicalPagesSloppy(mapped, leftExtra);
+    if (rightExtra)
+        vmDeallocatePhysicalPagesSloppy(alignedEnd, rightExtra);
+
+    return VMAlignedAllocation { aligned, VMAllocation { mapped, mappedSize } };
+#else
+    if (leftExtra)
+        vmDeallocate(mapped, leftExtra);
+    if (rightExtra)
+        vmDeallocate(alignedEnd, rightExtra);
+
+    return VMAlignedAllocation { aligned, VMAllocation { aligned, vmSize } };
+#endif
 }
 
 } // namespace bmalloc

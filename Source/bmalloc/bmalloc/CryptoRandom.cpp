@@ -125,9 +125,9 @@ void ARC4RandomNumberGenerator::stir()
             RELEASE_BASSERT(ret >= 0);
             fd = ret;
         });
-    ptrdiff_t amountRead = 0;
+    ssize_t amountRead = 0;
     while (static_cast<size_t>(amountRead) < length) {
-        ptrdiff_t currentRead = read(fd, randomness + amountRead, length - amountRead);
+        ssize_t currentRead = read(fd, randomness + amountRead, length - amountRead);
         // We need to check for both EAGAIN and EINTR since on some systems /dev/urandom
         // is blocking and on others it is non-blocking.
         if (currentRead == -1)
