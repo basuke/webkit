@@ -35,7 +35,6 @@
 #if !BENABLE(LIBPAS)
 #undef LIBPAS_ENABLED
 #define LIBPAS_ENABLED 0
-extern int pas_not_empty;
 #endif
 #endif
 
