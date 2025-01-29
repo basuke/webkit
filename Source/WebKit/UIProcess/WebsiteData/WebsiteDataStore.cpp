@@ -464,6 +464,11 @@ static void resolveDirectories(WebsiteDataStoreConfiguration::Directories& direc
         auto resolvedCookieDirectory = resolveAndCreateReadWriteDirectoryForSandboxExtension(FileSystem::parentPath(directories.cookieStorageFile));
         directories.cookieStorageFile = FileSystem::pathByAppendingComponent(resolvedCookieDirectory, FileSystem::pathFileName(directories.cookieStorageFile));
     }
+
+#if ENABLE(CONTENT_EXTENSIONS)
+    if (!directories.resourceMonitorThrottlerDirectory.isEmpty())
+        directories.resourceMonitorThrottlerDirectory = resolveAndCreateReadWriteDirectoryForSandboxExtension(directories.resourceMonitorThrottlerDirectory);
+#endif
 }
 
 const WebsiteDataStoreConfiguration::Directories& WebsiteDataStore::resolvedDirectories() const
@@ -2311,6 +2316,17 @@ String WebsiteDataStore::defaultJavaScriptConfigurationDirectory(const String&)
     return String();
 }
 
+#if ENABLE(CONTENT_EXTENSIONS)
+String WebsiteDataStore::defaultResourceMonitorThrottlerDirectory(const String& baseDataDirectory)
+{
+#if PLATFORM(PLAYSTATION) || USE(GLIB)
+    return websiteDataDirectoryFileSystemRepresentation("resourcemonitorthrottler"_s, baseDataDirectory);
+#else
+    return websiteDataDirectoryFileSystemRepresentation("ResourceMonitorThrottler"_s, baseDataDirectory);
+#endif
+}
+#endif
+
 bool WebsiteDataStore::networkProcessHasEntitlementForTesting(const String&)
 {
     return false;
@@ -2755,7 +2771,7 @@ bool WebsiteDataStore::builtInNotificationsEnabled() const
 WebCore::ResourceMonitorThrottler& WebsiteDataStore::resourceMonitorThrottler()
 {
     if (!m_resourceMonitorThrottler)
-        m_resourceMonitorThrottler = WebCore::ResourceMonitorThrottler::create();
+        m_resourceMonitorThrottler = WebCore::ResourceMonitorThrottler::create(configuration().resourceMonitorThrottlerDirectory());
 
     return *m_resourceMonitorThrottler;
 }
@@ -2765,5 +2781,4 @@ void WebsiteDataStore::resetResourceMonitorThrottlerForTesting()
     m_resourceMonitorThrottler = nullptr;
 }
 #endif
-
 } // namespace WebKit

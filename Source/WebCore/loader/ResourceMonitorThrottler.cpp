@@ -27,19 +27,16 @@
 #include "ResourceMonitorThrottler.h"
 
 #include "Logging.h"
+#include "ResourceMonitorPersistence.h"
+#include <wtf/MainThread.h>
 #include <wtf/Seconds.h>
 #include <wtf/StdLibExtras.h>
-#include <wtf/text/StringHash.h>
+#include <wtf/text/MakeString.h>
+#include <wtf/threads/BinarySemaphore.h>
 
 #if ENABLE(CONTENT_EXTENSIONS)
 
-#define RESOURCEMONITOR_RELEASE_LOG(fmt, ...) RELEASE_LOG(ResourceLoading, "%p - ResourceMonitorThrottler::" fmt, this, ##__VA_ARGS__)
-
 namespace WebCore {
-
-static constexpr size_t defaultThrottleAccessCount = 5;
-static constexpr Seconds defaultThrottleDuration = 24_h;
-static constexpr size_t defaultMaxHosts = 100;
 
 Ref<ResourceMonitorThrottler> ResourceMonitorThrottler::create()
 {
@@ -48,26 +45,112 @@ Ref<ResourceMonitorThrottler> ResourceMonitorThrottler::create()
 
 Ref<ResourceMonitorThrottler> ResourceMonitorThrottler::create(size_t count, Seconds duration, size_t maxHosts)
 {
-    return adoptRef(*new ResourceMonitorThrottler(count, duration, maxHosts));
+    return create(SQLiteDatabase::inMemoryPath(), count, duration, maxHosts);
 }
 
-ResourceMonitorThrottler::ResourceMonitorThrottler(size_t count, Seconds duration, size_t maxHosts)
+Ref<ResourceMonitorThrottler> ResourceMonitorThrottler::create(const String& databasePath)
+{
+    return create(databasePath, defaultThrottleAccessCount, defaultThrottleDuration, defaultMaxHosts);
+}
+
+Ref<ResourceMonitorThrottler> ResourceMonitorThrottler::create(const String& databasePath, size_t count, Seconds duration, size_t maxHosts)
+{
+    return adoptRef(*new ResourceMonitorThrottler(databasePath, count, duration, maxHosts));
+}
+
+ResourceMonitorThrottler::ResourceMonitorThrottler(const String& databasePath, size_t count, Seconds duration, size_t maxHosts)
+{
+    ASSERT(isMainThread());
+
+    sharedWorkQueueSingleton()->dispatch([weakThis = ThreadSafeWeakPtr { *this }, path = crossThreadCopy(databasePath), count, duration, maxHosts] mutable {
+        if (RefPtr protectedThis = weakThis.get())
+            protectedThis->m_container = makeUnique<ThrottlerContainer>(WTFMove(path), count, duration, maxHosts);
+    });
+}
+
+ResourceMonitorThrottler::~ResourceMonitorThrottler()
+{
+    ASSERT(isMainThread());
+
+    sharedWorkQueueSingleton()->dispatch([container = WTFMove(m_container)] mutable {
+        container.reset(nullptr);
+    });
+}
+
+void ResourceMonitorThrottler::tryAccess(const String& host, ContinuousApproximateTime time, CompletionHandler<void(bool)>&& completionHandler)
+{
+    ASSERT(isMainThread());
+
+    if (host.isEmpty()) {
+        completionHandler(false);
+        return;
+    }
+
+    sharedWorkQueueSingleton()->dispatch([weakThis = ThreadSafeWeakPtr { *this }, host = crossThreadCopy(host), time, completionHandler = WTFMove(completionHandler)] mutable {
+        RefPtr protectedThis = weakThis.get();
+        bool wasGranted = protectedThis ? protectedThis->m_container->tryAccess(host, time) : false;
+
+        callOnMainRunLoop([wasGranted, completionHandler = WTFMove(completionHandler)] mutable {
+            completionHandler(wasGranted);
+        });
+    });
+}
+
+void ResourceMonitorThrottler::setCountPerDuration(size_t count, Seconds duration)
+{
+    ASSERT(isMainThread());
+
+    sharedWorkQueueSingleton()->dispatch([weakThis = ThreadSafeWeakPtr { *this }, count, duration] mutable {
+        if (RefPtr protectedThis = weakThis.get())
+            protectedThis->m_container->setCountPerDuration(count, duration);
+    });
+}
+
+ResourceMonitorThrottler::ThrottlerContainer::ThrottlerContainer(String&& path, size_t count, Seconds duration, size_t maxHosts)
     : m_config { count, duration, maxHosts }
 {
+    ASSERT(!isMainThread());
+
     ASSERT(maxHosts >= 1);
-    RESOURCEMONITOR_RELEASE_LOG("Initialized with count: %zu, duration: %.f, maxHosts: %zu", count, duration.value(), maxHosts);
+
+    auto persistence = makeUnique<ResourceMonitorPersistence>();
+
+    if (!persistence->openDatabase(WTFMove(path)))
+        return;
+
+    m_persistence = WTFMove(persistence);
+
+    bool changed = false;
+    for (const auto& record : m_persistence->importRecords()) {
+        auto& throttler = throttlerForHost(record.host);
+        changed |= throttler.tryAccessAndUpdateHistory(record.time, m_config);
+    }
+    if (changed)
+        maintainHosts(ContinuousApproximateTime::now());
 }
 
-auto ResourceMonitorThrottler::throttlerForHost(const String& host) -> AccessThrottler&
+ResourceMonitorThrottler::ThrottlerContainer::~ThrottlerContainer()
 {
+    ASSERT(!isMainThread());
+
+    m_persistence->deleteExpiredRecords(ContinuousApproximateTime::now(), m_config.duration);
+    m_persistence = nullptr;
+}
+
+auto ResourceMonitorThrottler::ThrottlerContainer::throttlerForHost(const String& host) -> AccessThrottler&
+{
+    ASSERT(!isMainThread());
+
     return m_throttlersByHost.ensure(host, [] {
         return AccessThrottler { };
     }).iterator->value;
 }
 
-void ResourceMonitorThrottler::removeOldestThrottler()
+void ResourceMonitorThrottler::ThrottlerContainer::removeOldestThrottler()
 {
-    auto oldest = ApproximateTime::infinity();
+    ASSERT(!isMainThread());
+
+    auto oldest = ContinuousApproximateTime::infinity();
     String oldestKey;
 
     for (auto it : m_throttlersByHost) {
@@ -81,31 +164,53 @@ void ResourceMonitorThrottler::removeOldestThrottler()
     m_throttlersByHost.remove(oldestKey);
 }
 
-bool ResourceMonitorThrottler::tryAccess(const String& host, ApproximateTime time)
+bool ResourceMonitorThrottler::ThrottlerContainer::tryAccess(const String& host, ContinuousApproximateTime time)
 {
-    if (host.isEmpty())
-        return false;
+    ASSERT(!isMainThread());
+    ASSERT(!host.isEmpty());
 
     auto& throttler = throttlerForHost(host);
-    auto result = throttler.tryAccessAndUpdateHistory(time, m_config);
+    bool wasGranted = throttler.tryAccessAndUpdateHistory(time, m_config);
 
-    if (m_throttlersByHost.size() > m_config.maxHosts) {
-        // Update and remove all expired access times. If no entry in throttler, remove it.
-        m_throttlersByHost.removeIf([protectedThis = Ref { *this }, &time](auto& it) -> bool {
-            return it.value.tryExpire(time, protectedThis->m_config);
-        });
-
-        // If there are still too many hosts, then remove oldest one.
-        while (m_throttlersByHost.size() > m_config.maxHosts)
-            removeOldestThrottler();
+    if (wasGranted) {
+        maintainHosts(time);
+        m_persistence->recordAccess(host, time);
     }
-    ASSERT(m_throttlersByHost.size() <= m_config.maxHosts);
 
-    return result;
+    return wasGranted;
 }
 
-bool ResourceMonitorThrottler::AccessThrottler::tryAccessAndUpdateHistory(ApproximateTime time, const Config& config)
+void ResourceMonitorThrottler::ThrottlerContainer::maintainHosts(ContinuousApproximateTime time)
 {
+    ASSERT(!isMainThread());
+
+    if (m_throttlersByHost.size() <= m_config.maxHosts)
+        return;
+
+    // Update and remove all expired access times. If no entry in throttler, remove it.
+    m_throttlersByHost.removeIf([&](auto& it) -> bool {
+        return it.value.tryExpire(time, m_config);
+    });
+
+    // If there are still too many hosts, then remove oldest one.
+    while (m_throttlersByHost.size() > m_config.maxHosts)
+        removeOldestThrottler();
+
+    ASSERT(m_throttlersByHost.size() <= m_config.maxHosts);
+}
+
+void ResourceMonitorThrottler::ThrottlerContainer::setCountPerDuration(size_t count, Seconds duration)
+{
+    ASSERT(!isMainThread());
+
+    m_config.count = count;
+    m_config.duration = duration;
+}
+
+bool ResourceMonitorThrottler::AccessThrottler::tryAccessAndUpdateHistory(ContinuousApproximateTime time, const Config& config)
+{
+    ASSERT(!isMainThread());
+
     tryExpire(time, config);
     if (m_accessTimes.size() >= config.count)
         return false;
@@ -117,13 +222,17 @@ bool ResourceMonitorThrottler::AccessThrottler::tryAccessAndUpdateHistory(Approx
     return true;
 }
 
-ApproximateTime ResourceMonitorThrottler::AccessThrottler::oldestAccessTime() const
+ContinuousApproximateTime ResourceMonitorThrottler::AccessThrottler::oldestAccessTime() const
 {
+    ASSERT(!isMainThread());
+
     return m_accessTimes.peek();
 }
 
-bool ResourceMonitorThrottler::AccessThrottler::tryExpire(ApproximateTime time, const Config& config)
+bool ResourceMonitorThrottler::AccessThrottler::tryExpire(ContinuousApproximateTime time, const Config& config)
 {
+    ASSERT(!isMainThread());
+
     auto expirationTime = time - config.duration;
 
     while (!m_accessTimes.isEmpty()) {
@@ -136,14 +245,6 @@ bool ResourceMonitorThrottler::AccessThrottler::tryExpire(ApproximateTime time, 
     return true;
 }
 
-void ResourceMonitorThrottler::setCountPerDuration(size_t count, Seconds duration)
-{
-    m_config.count = count;
-    m_config.duration = duration;
-}
-
 } // namespace WebCore
-
-#undef RESOURCEMONITOR_RELEASE_LOG
 
 #endif

@@ -15971,8 +15971,7 @@ void WebPageProxy::setPresentingApplicationAuditToken(const audit_token_t& prese
 #if ENABLE(CONTENT_EXTENSIONS)
 void WebPageProxy::shouldOffloadIFrameForHost(const String& host, CompletionHandler<void(bool)>&& completionHandler) const
 {
-    bool wasGranted = protectedWebsiteDataStore()->resourceMonitorThrottler().tryAccess(host);
-    completionHandler(wasGranted);
+    protectedWebsiteDataStore()->resourceMonitorThrottler().tryAccess(host, ContinuousApproximateTime::now(), WTFMove(completionHandler));
 }
 #endif
 
