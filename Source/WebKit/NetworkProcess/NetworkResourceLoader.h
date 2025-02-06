@@ -284,6 +284,8 @@ private:
 
     bool shouldSendResourceLoadMessages() const;
 
+    uint64_t bytesTransferredOverNetworkDelta();
+
     NetworkResourceLoadParameters m_parameters;
 
     Ref<NetworkConnectionToWebProcess> m_connection;
@@ -303,6 +305,7 @@ private:
     bool m_didConsumeSandboxExtensions { false };
     bool m_isAllowedToAskUserForCredentials { false };
     size_t m_numBytesReceived { 0 };
+    size_t m_totalBytesTransferredOverNetwork { 0 };
 
     unsigned m_retrievedDerivedDataCount { 0 };
 

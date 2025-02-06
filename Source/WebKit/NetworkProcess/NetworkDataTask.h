@@ -150,6 +150,8 @@ public:
 
     virtual void setTimingAllowFailedFlag() { }
 
+    size_t totalBytesTransferredOverNetwork() const { return m_totalBytesTransferredOverNetwork; }
+
 protected:
     NetworkDataTask(NetworkSession&, NetworkDataTaskClient&, const WebCore::ResourceRequest&, WebCore::StoredCredentialsPolicy, bool shouldClearReferrerOnHTTPSToHTTPRedirect, bool dataTaskIsForMainFrameNavigation);
 
@@ -162,6 +164,7 @@ protected:
     void scheduleFailure(FailureType);
 
     void restrictRequestReferrerToOriginIfNeeded(WebCore::ResourceRequest&);
+    void setTotalBytesTransferredOverNetwork(size_t bytes) { m_totalBytesTransferredOverNetwork = bytes; }
 
     WeakPtr<NetworkSession> m_session;
     WeakPtr<NetworkDataTaskClient> m_client;
@@ -176,8 +179,9 @@ protected:
     String m_pendingDownloadLocation;
     WebCore::ResourceRequest m_firstRequest;
     WebCore::ResourceRequest m_previousRequest;
-    bool m_shouldClearReferrerOnHTTPSToHTTPRedirect { true };
     String m_suggestedFilename;
+    size_t m_totalBytesTransferredOverNetwork { 0 };
+    bool m_shouldClearReferrerOnHTTPSToHTTPRedirect { true };
     bool m_dataTaskIsForMainFrameNavigation { false };
     bool m_failureScheduled { false };
 };

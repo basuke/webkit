@@ -7,8 +7,9 @@
 <body>
 <script>
 
-description("Test iframe with huge resource usage is unloaded.");
+description("Ensure the monitor watches the encoded size, not the decoded size.");
 window.jsTestIsAsync = true;
+var result;
 
 onload = async () => {
     if (!await setup()) {
@@ -21,14 +22,17 @@ onload = async () => {
     const base = 'http://localhost:8080/iframe-monitor/resources';
 
     stage.innerHTML = `
-        <iframe name="frame1" src="http://localhost:8080/iframe-monitor/resources/--eligible--/iframe.html"></iframe>
+        <iframe name="frame1" src="${base}/--eligible--/compressed.html"></iframe>
     `;
 
-    await waitUntilUnload('frame1');
+    window.addEventListener('message', async (event) => {
+        await pause(100);
+        result = event.data;
 
-    shouldNotBe(`document.querySelector('iframe[name=frame1]').srcdoc`, '""');
-
-    finishJSTest();
+        shouldBe('result', '20 * 1024');
+        shouldBe(`document.querySelector('iframe[name=frame1]').srcdoc`, '""');
+        finishJSTest();
+    });
 }
 </script>
 

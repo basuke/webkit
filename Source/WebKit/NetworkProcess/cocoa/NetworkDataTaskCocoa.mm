@@ -397,6 +397,8 @@ void NetworkDataTaskCocoa::didReceiveData(const WebCore::SharedBuffer& data)
 {
     WTFEmitSignpost(m_task.get(), DataTask, "received %zd bytes", data.size());
 
+    setTotalBytesTransferredOverNetwork([m_task _countOfBytesReceivedEncoded]);
+
     if (m_client)
         m_client->didReceiveData(data);
 }

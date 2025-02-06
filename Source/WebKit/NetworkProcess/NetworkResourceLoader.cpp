@@ -582,6 +582,7 @@ void NetworkResourceLoader::cleanup(LoadResult result)
     invalidateSandboxExtensions();
 
     m_networkLoad = nullptr;
+    m_totalBytesTransferredOverNetwork = 0;
 
     // This will cause NetworkResourceLoader to be destroyed and therefore we do it last.
     connection->didCleanupResourceLoader(*this);
@@ -1564,9 +1565,9 @@ void NetworkResourceLoader::bufferingTimerFired()
     auto sharedBuffer = m_bufferedData.takeAsContiguous();
     bool shouldFilter = m_contentFilter && !m_contentFilter->continueAfterDataReceived(sharedBuffer, m_bufferedDataEncodedDataLength);
     if (!shouldFilter)
-        send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(sharedBuffer.get()), m_bufferedDataEncodedDataLength));
+        send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(sharedBuffer.get()), m_bufferedDataEncodedDataLength, bytesTransferredOverNetworkDelta()));
 #else
-    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(*m_bufferedData.get()), m_bufferedDataEncodedDataLength));
+    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(*m_bufferedData.get()), m_bufferedDataEncodedDataLength, bytesTransferredOverNetworkDelta()));
 #endif
     m_bufferedData.empty();
     m_bufferedDataEncodedDataLength = 0;
@@ -1581,7 +1582,7 @@ void NetworkResourceLoader::sendBuffer(const FragmentedSharedBuffer& buffer, siz
         return;
 #endif
 
-    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(buffer), encodedDataLength));
+    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(buffer), encodedDataLength, bytesTransferredOverNetworkDelta()));
 }
 
 void NetworkResourceLoader::tryStoreAsCacheEntry()
@@ -2129,7 +2130,7 @@ void NetworkResourceLoader::serviceWorkerDidFinish()
 
 void NetworkResourceLoader::dataReceivedThroughContentFilter(const SharedBuffer& buffer, size_t encodedDataLength)
 {
-    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(buffer), encodedDataLength));
+    send(Messages::WebResourceLoader::DidReceiveData(IPC::SharedBufferReference(buffer), encodedDataLength, bytesTransferredOverNetworkDelta()));
 }
 
 WebCore::ResourceError NetworkResourceLoader::contentFilterDidBlock(WebCore::ContentFilterUnblockHandler unblockHandler, String&& unblockRequestDeniedScript)
@@ -2179,6 +2180,18 @@ void NetworkResourceLoader::useRedirectionForCurrentNavigation(WebCore::Resource
     ASSERT(response.isRedirection());
 
     m_redirectionForCurrentNavigation = makeUnique<WebCore::ResourceResponse>(WTFMove(response));
+}
+
+uint64_t NetworkResourceLoader::bytesTransferredOverNetworkDelta()
+{
+    if (RefPtr networkLoad = m_networkLoad) {
+        if (auto totalBytes = networkLoad->totalBytesTransferredOverNetwork(); totalBytes > m_totalBytesTransferredOverNetwork) {
+            auto bytesTransferredOverNetwork = totalBytes - m_totalBytesTransferredOverNetwork;
+            m_totalBytesTransferredOverNetwork = totalBytes;
+            return bytesTransferredOverNetwork;
+        }
+    }
+    return 0;
 }
 
 } // namespace WebKit

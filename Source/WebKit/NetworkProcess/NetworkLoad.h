@@ -90,6 +90,8 @@ public:
     std::optional<WebCore::PageIdentifier> webPageID() const;
     Ref<NetworkProcess> networkProcess();
 
+    size_t totalBytesTransferredOverNetwork() const { return m_task ? m_task->totalBytesTransferredOverNetwork() : 0; }
+
 private:
     NetworkLoad(NetworkLoadClient&, NetworkLoadParameters&&, NetworkSession&);
 
